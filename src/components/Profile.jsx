@@ -8,7 +8,7 @@ export default function Profile({ user, handleProfileChange, theme }) {
     return (
       JSON.parse(saved) || {
         fullName: user?.name || "John Doe",
-        email: user?.email || "john.doe@example.com",
+        email: user?.email || "j ohn.doe@example.com",
         phone: "+1 (555) 123-4567",
         birthDate: "1990-05-15",
         location: "San Francisco, CA",
