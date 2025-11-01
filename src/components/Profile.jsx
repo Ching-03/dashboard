@@ -7,17 +7,29 @@ export default function Profile({ user, theme = "dark" }) {
   const [newCondition, setNewCondition] = useState("");
   const [newGoalText, setNewGoalText] = useState("");
 
-  // Fetch profile by email
+  // ✅ Load saved profile (even if user is null)
   useEffect(() => {
-    if (!user?.email) return;
+    const savedProfile = localStorage.getItem("userProfile");
+    if (savedProfile) {
+      setProfile(JSON.parse(savedProfile));
+    }
+  }, []);
+
+  // ✅ Fetch from backend when profile or user email changes
+  useEffect(() => {
+    const emailToLoad =
+      user?.email || JSON.parse(localStorage.getItem("userProfile"))?.email;
+    if (!emailToLoad) return;
 
     const fetchProfile = async () => {
       try {
-        const res = await fetch(`http://localhost:5000/api/profile/${encodeURIComponent(user.email)}`);
+        const res = await fetch(
+          `http://localhost:5000/api/profile/${encodeURIComponent(emailToLoad)}`
+        );
         const data = await res.json();
+
         if (res.ok) {
-          // normalize fields to match frontend names
-          setProfile({
+          const loadedProfile = {
             id: data.id,
             fullName: data.full_name || "",
             email: data.email || "",
@@ -29,9 +41,14 @@ export default function Profile({ user, theme = "dark" }) {
             weight: data.weight || "",
             emergencyContact: data.emergency_contact || "",
             avatar: data.avatar || "",
-            conditions: Array.isArray(data.conditions) ? data.conditions : [],
+            conditions: Array.isArray(data.conditions)
+              ? data.conditions
+              : [],
             goals: Array.isArray(data.goals) ? data.goals : [],
-          });
+          };
+
+          setProfile(loadedProfile);
+          localStorage.setItem("userProfile", JSON.stringify(loadedProfile));
         } else {
           console.error("Failed to load profile:", data);
         }
@@ -41,15 +58,15 @@ export default function Profile({ user, theme = "dark" }) {
     };
 
     fetchProfile();
-  }, [user]);
+  }, [user?.email]); // ✅ dependency fixed
 
-  // Input change handler
+  // ✅ Input handler
   const handleChange = (e) => {
     const { name, value } = e.target;
     setProfile((p) => ({ ...p, [name]: value }));
   };
 
-  // image upload (base64)
+  // ✅ Image upload (base64)
   const handleImageUpload = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -58,24 +75,36 @@ export default function Profile({ user, theme = "dark" }) {
     reader.readAsDataURL(file);
   };
 
-  // Add / remove conditions
+  // ✅ Add/remove conditions
   const handleAddCondition = () => {
     if (!newCondition.trim()) return;
-    setProfile((p) => ({ ...p, conditions: [...(p.conditions || []), newCondition.trim()] }));
+    setProfile((p) => ({
+      ...p,
+      conditions: [...(p.conditions || []), newCondition.trim()],
+    }));
     setNewCondition("");
   };
   const handleRemoveCondition = (i) => {
-    setProfile((p) => ({ ...p, conditions: p.conditions.filter((_, idx) => idx !== i) }));
+    setProfile((p) => ({
+      ...p,
+      conditions: p.conditions.filter((_, idx) => idx !== i),
+    }));
   };
 
-  // Goals: each goal => { text, progress }
+  // ✅ Add/remove goals
   const handleAddGoal = () => {
     if (!newGoalText.trim()) return;
-    setProfile((p) => ({ ...p, goals: [...(p.goals || []), { text: newGoalText.trim(), progress: 0 }] }));
+    setProfile((p) => ({
+      ...p,
+      goals: [...(p.goals || []), { text: newGoalText.trim(), progress: 0 }],
+    }));
     setNewGoalText("");
   };
   const handleRemoveGoal = (i) => {
-    setProfile((p) => ({ ...p, goals: p.goals.filter((_, idx) => idx !== i) }));
+    setProfile((p) => ({
+      ...p,
+      goals: p.goals.filter((_, idx) => idx !== i),
+    }));
   };
   const handleGoalProgressChange = (i, value) => {
     const v = Math.max(0, Math.min(100, Number(value) || 0));
@@ -86,7 +115,7 @@ export default function Profile({ user, theme = "dark" }) {
     });
   };
 
-  // Save profile (POST). Include id so backend updates by id.
+  // ✅ Save profile to backend + persist to localStorage
   const handleSave = async () => {
     try {
       const res = await fetch("http://localhost:5000/api/profile", {
@@ -95,17 +124,26 @@ export default function Profile({ user, theme = "dark" }) {
         body: JSON.stringify(profile),
       });
       const data = await res.json();
+
       if (!res.ok) throw new Error(data.message || "Save error");
-      alert(data.message || "Profile saved");
-      // refresh id/returned profile if backend returns one (optional)
-      // keep editing toggled off
+
+      alert("✅ Profile saved successfully!");
+
+      // 💾 Save to localStorage after successful save
+      localStorage.setItem("userProfile", JSON.stringify(profile));
+
       setEditing(false);
     } catch (err) {
-      alert("Error saving profile: " + err.message);
+      alert("❌ Error saving profile: " + err.message);
     }
   };
 
-  if (!profile) return <div className={`profile-page ${theme}`}><div className="loading">Loading profile...</div></div>;
+  if (!profile)
+    return (
+      <div className={`profile-page ${theme}`}>
+        <div className="loading">Loading profile...</div>
+      </div>
+    );
 
   return (
     <div className={`profile-page ${theme}`}>
@@ -114,45 +152,16 @@ export default function Profile({ user, theme = "dark" }) {
           <h2>Profile</h2>
           <p>Manage your personal and health information</p>
         </div>
+
         <div className="header-actions">
           <button
             className="edit-btn"
-            onClick={() => {
-              if (editing) handleSave();
-              else setEditing(true);
-            }}
+            onClick={() => (editing ? handleSave() : setEditing(true))}
           >
             {editing ? "Save Changes" : "Edit Profile"}
           </button>
           {editing && (
-            <button
-              className="cancel-btn"
-              onClick={() => {
-                // revert by refetching
-                setEditing(false);
-                // refetch quick
-                fetch(`http://localhost:5000/api/profile/${encodeURIComponent(user.email)}`)
-                  .then((r) => r.json())
-                  .then((d) => {
-                    setProfile({
-                      id: d.id,
-                      fullName: d.full_name || "",
-                      email: d.email || "",
-                      phone: d.phone || "",
-                      birthDate: d.birth_date || "",
-                      location: d.location || "",
-                      bloodType: d.blood_type || "",
-                      height: d.height || "",
-                      weight: d.weight || "",
-                      emergencyContact: d.emergency_contact || "",
-                      avatar: d.avatar || "",
-                      conditions: Array.isArray(d.conditions) ? d.conditions : [],
-                      goals: Array.isArray(d.goals) ? d.goals : [],
-                    });
-                  })
-                  .catch(() => {});
-              }}
-            >
+            <button className="cancel-btn" onClick={() => setEditing(false)}>
               Cancel
             </button>
           )}
@@ -160,19 +169,26 @@ export default function Profile({ user, theme = "dark" }) {
       </div>
 
       <div className="profile-container">
-        {/* Left card */}
+        {/* Left Panel */}
         <aside className="left-panel card">
           <div className="avatar-block">
             {profile.avatar ? (
               <img src={profile.avatar} alt="avatar" className="avatar-img" />
             ) : (
-              <div className="circle">{(profile.fullName || "U").charAt(0)}</div>
+              <div className="circle">
+                {(profile.fullName || "U").charAt(0)}
+              </div>
             )}
 
             {editing && (
               <label className="upload-btn">
                 Change Photo
-                <input type="file" accept="image/*" onChange={handleImageUpload} hidden />
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageUpload}
+                  hidden
+                />
               </label>
             )}
           </div>
@@ -186,18 +202,12 @@ export default function Profile({ user, theme = "dark" }) {
           </div>
 
           <div className="left-info">
-            <div className="info-row">
-              <span className="icon">📍</span>
-              <span>{profile.location || "No location"}</span>
-            </div>
-            <div className="info-row">
-              <span className="icon">🎂</span>
-              <span>{profile.birthDate || "No birthdate"}</span>
-            </div>
+            <p>📍 {profile.location || "No location"}</p>
+            <p>🎂 {profile.birthDate || "No birthdate"}</p>
           </div>
         </aside>
 
-        {/* Right content */}
+        {/* Right Panel */}
         <main className="right-panel">
           {/* Personal Info */}
           <section className="section card">
@@ -205,27 +215,54 @@ export default function Profile({ user, theme = "dark" }) {
             <div className="input-grid">
               <div className="input-group">
                 <label>Full Name</label>
-                <input name="fullName" value={profile.fullName} onChange={handleChange} disabled={!editing} />
+                <input
+                  name="fullName"
+                  value={profile.fullName}
+                  onChange={handleChange}
+                  disabled={!editing}
+                />
               </div>
 
               <div className="input-group">
                 <label>Email Address</label>
-                <input name="email" value={profile.email} onChange={handleChange} disabled={!editing} type="email" />
+                <input
+                  name="email"
+                  type="email"
+                  value={profile.email}
+                  onChange={handleChange}
+                  disabled={!editing}
+                />
               </div>
 
               <div className="input-group">
                 <label>Phone Number</label>
-                <input name="phone" value={profile.phone} onChange={handleChange} disabled={!editing} />
+                <input
+                  name="phone"
+                  value={profile.phone}
+                  onChange={handleChange}
+                  disabled={!editing}
+                />
               </div>
 
               <div className="input-group">
                 <label>Date of Birth</label>
-                <input name="birthDate" value={profile.birthDate} onChange={handleChange} disabled={!editing} type="date" />
+                <input
+                  name="birthDate"
+                  type="date"
+                  value={profile.birthDate}
+                  onChange={handleChange}
+                  disabled={!editing}
+                />
               </div>
 
               <div className="input-group full-width">
                 <label>Location</label>
-                <input name="location" value={profile.location} onChange={handleChange} disabled={!editing} />
+                <input
+                  name="location"
+                  value={profile.location}
+                  onChange={handleChange}
+                  disabled={!editing}
+                />
               </div>
             </div>
           </section>
@@ -233,54 +270,41 @@ export default function Profile({ user, theme = "dark" }) {
           {/* Medical Info */}
           <section className="section card">
             <h3>Medical Information</h3>
-
             <div className="medical-grid">
-              <div className="med-card">
-                <div className="med-title">Blood Type</div>
-                <div className="med-value">
-                  <input name="bloodType" value={profile.bloodType} onChange={handleChange} disabled={!editing} />
-                </div>
-              </div>
-
-              <div className="med-card">
-                <div className="med-title">Height</div>
-                <div className="med-value">
-                  <input name="height" value={profile.height} onChange={handleChange} disabled={!editing} />
-                </div>
-              </div>
-
-              <div className="med-card">
-                <div className="med-title">Weight</div>
-                <div className="med-value">
-                  <input name="weight" value={profile.weight} onChange={handleChange} disabled={!editing} />
-                </div>
-              </div>
-
-              <div className="med-card">
-                <div className="med-title">Emergency Contact</div>
-                <div className="med-value">
-                  <input name="emergencyContact" value={profile.emergencyContact} onChange={handleChange} disabled={!editing} />
-                </div>
-              </div>
+              {["bloodType", "height", "weight", "emergencyContact"].map(
+                (field, i) => (
+                  <div key={i} className="med-card">
+                    <div className="med-title">
+                      {field.replace(/([A-Z])/g, " $1")}
+                    </div>
+                    <input
+                      name={field}
+                      value={profile[field]}
+                      onChange={handleChange}
+                      disabled={!editing}
+                    />
+                  </div>
+                )
+              )}
             </div>
           </section>
 
           {/* Goals */}
           <section className="section card">
             <h3>Health Goals</h3>
-            <p className="muted">Track your progress towards your health objectives</p>
-
             <div className="goals-list">
               {profile.goals.map((g, i) => (
                 <div key={i} className="goal-row">
                   <div className="goal-text">{g.text}</div>
                   <div className="goal-bar-row">
                     <div className="goal-bar">
-                      <div className="goal-progress" style={{ width: `${g.progress}%` }} />
+                      <div
+                        className="goal-progress"
+                        style={{ width: `${g.progress}%` }}
+                      />
                     </div>
                     <div className="goal-percent">{g.progress}%</div>
                   </div>
-
                   {editing && (
                     <div className="goal-edit-row">
                       <input
@@ -288,17 +312,27 @@ export default function Profile({ user, theme = "dark" }) {
                         min="0"
                         max="100"
                         value={g.progress}
-                        onChange={(e) => handleGoalProgressChange(i, e.target.value)}
+                        onChange={(e) =>
+                          handleGoalProgressChange(i, e.target.value)
+                        }
                       />
-                      <button className="remove-goal" onClick={() => handleRemoveGoal(i)}>Remove</button>
+                      <button
+                        className="remove-goal"
+                        onClick={() => handleRemoveGoal(i)}
+                      >
+                        Remove
+                      </button>
                     </div>
                   )}
                 </div>
               ))}
-
               {editing && (
                 <div className="add-goal-row">
-                  <input placeholder="New goal text..." value={newGoalText} onChange={(e) => setNewGoalText(e.target.value)} />
+                  <input
+                    placeholder="New goal text..."
+                    value={newGoalText}
+                    onChange={(e) => setNewGoalText(e.target.value)}
+                  />
                   <button onClick={handleAddGoal}>Add Goal</button>
                 </div>
               )}
@@ -308,19 +342,28 @@ export default function Profile({ user, theme = "dark" }) {
           {/* Conditions */}
           <section className="section card">
             <h3>Health Conditions</h3>
-
             <ul className="condition-list">
               {profile.conditions.map((c, i) => (
                 <li key={i}>
-                  <span>{c}</span>
-                  {editing && <button className="small-x" onClick={() => handleRemoveCondition(i)}>✖</button>}
+                  {c}
+                  {editing && (
+                    <button
+                      className="small-x"
+                      onClick={() => handleRemoveCondition(i)}
+                    >
+                      ✖
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>
-
             {editing && (
               <div className="input-row">
-                <input placeholder="Add condition..." value={newCondition} onChange={(e) => setNewCondition(e.target.value)} />
+                <input
+                  placeholder="Add condition..."
+                  value={newCondition}
+                  onChange={(e) => setNewCondition(e.target.value)}
+                />
                 <button onClick={handleAddCondition}>Add</button>
               </div>
             )}
