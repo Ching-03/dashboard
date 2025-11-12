@@ -1,62 +1,45 @@
 import { useEffect, useState } from "react";
 import "./Profile.css";
 
-export default function Profile({ user, theme = "dark" }) {
-  const [profile, setProfile] = useState(null);
+export default function Profile({ user, theme = "dark", onProfileUpdate }) {
+  // ✅ Initialize profile from localStorage or user prop
+  const [profile, setProfile] = useState(() => {
+    const saved = localStorage.getItem("userProfile");
+    return saved
+      ? JSON.parse(saved)
+      : {
+          fullName: user?.name || "",
+          email: user?.email || "",
+          avatar: user?.avatarUrl || "",
+          phone: "",
+          birthDate: "",
+          location: "",
+          bloodType: "",
+          height: "",
+          weight: "",
+          emergencyContact: "",
+          conditions: [],
+          goals: [],
+        };
+  });
+
   const [editing, setEditing] = useState(false);
   const [newCondition, setNewCondition] = useState("");
   const [newGoalText, setNewGoalText] = useState("");
 
-  // ✅ Load from localStorage
+  // ✅ Sync profile to localStorage + parent (sidebar) whenever it changes
   useEffect(() => {
-    const savedProfile = localStorage.getItem("userProfile");
-    if (savedProfile) {
-      setProfile(JSON.parse(savedProfile));
-    }
-  }, []);
-
-  // ✅ Fetch profile from backend
-  useEffect(() => {
-    const emailToLoad =
-      user?.email || JSON.parse(localStorage.getItem("userProfile"))?.email;
-    if (!emailToLoad) return;
-
-    const fetchProfile = async () => {
-      try {
-        const res = await fetch(
-          `http://localhost:5000/api/profile/${encodeURIComponent(emailToLoad)}`
-        );
-        const data = await res.json();
-
-        if (res.ok) {
-          const loadedProfile = {
-            id: data.id,
-            fullName: data.full_name || "",
-            email: data.email || "",
-            phone: data.phone || "",
-            birthDate: data.birth_date || "",
-            location: data.location || "",
-            bloodType: data.blood_type || "",
-            height: data.height || "",
-            weight: data.weight || "",
-            emergencyContact: data.emergency_contact || "",
-            avatar: data.avatar || "",
-            conditions: Array.isArray(data.conditions) ? data.conditions : [],
-            goals: Array.isArray(data.goals) ? data.goals : [],
-          };
-
-          setProfile(loadedProfile);
-          localStorage.setItem("userProfile", JSON.stringify(loadedProfile));
-        } else {
-          console.error("Failed to load profile:", data);
-        }
-      } catch (err) {
-        console.error("❌ Error fetching profile:", err);
+    if (profile) {
+      localStorage.setItem("userProfile", JSON.stringify(profile));
+      if (onProfileUpdate) {
+        onProfileUpdate({
+          fullName: profile.fullName,
+          email: profile.email,
+          avatar: profile.avatar,
+        });
       }
-    };
-
-    fetchProfile();
-  }, [user?.email]);
+    }
+  }, [profile, onProfileUpdate]);
 
   // ✅ Handlers
   const handleChange = (e) => {
@@ -113,23 +96,10 @@ export default function Profile({ user, theme = "dark" }) {
     });
   };
 
-  const handleSave = async () => {
-    try {
-      const res = await fetch("http://localhost:5000/api/profile", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(profile),
-      });
-      const data = await res.json();
-
-      if (!res.ok) throw new Error(data.message || "Save error");
-
-      alert("✅ Profile saved successfully!");
-      localStorage.setItem("userProfile", JSON.stringify(profile));
-      setEditing(false);
-    } catch (err) {
-      alert("❌ Error saving profile: " + err.message);
-    }
+  const handleSave = () => {
+    // ✅ Optional: Call backend save here
+    alert("✅ Profile saved successfully!");
+    setEditing(false);
   };
 
   if (!profile)
@@ -169,9 +139,7 @@ export default function Profile({ user, theme = "dark" }) {
             {profile.avatar ? (
               <img src={profile.avatar} alt="avatar" className="avatar-img" />
             ) : (
-              <div className="circle">
-                {(profile.fullName || "U").charAt(0)}
-              </div>
+              <div className="circle">{(profile.fullName || "U").charAt(0)}</div>
             )}
 
             {editing && (
@@ -207,57 +175,36 @@ export default function Profile({ user, theme = "dark" }) {
           <section className="section card">
             <h3>Personal Information</h3>
             <div className="input-grid">
-              <div className="input-group">
-                <label>Full Name</label>
-                <input
-                  name="fullName"
-                  value={profile.fullName}
-                  onChange={handleChange}
-                  disabled={!editing}
-                />
-              </div>
-
-              <div className="input-group">
-                <label>Email Address</label>
-                <input
-                  name="email"
-                  type="email"
-                  value={profile.email}
-                  onChange={handleChange}
-                  disabled={!editing}
-                />
-              </div>
-
-              <div className="input-group">
-                <label>Phone Number</label>
-                <input
-                  name="phone"
-                  value={profile.phone}
-                  onChange={handleChange}
-                  disabled={!editing}
-                />
-              </div>
-
-              <div className="input-group">
-                <label>Date of Birth</label>
-                <input
-                  name="birthDate"
-                  type="date"
-                  value={profile.birthDate}
-                  onChange={handleChange}
-                  disabled={!editing}
-                />
-              </div>
-
-              <div className="input-group full-width">
-                <label>Location</label>
-                <input
-                  name="location"
-                  value={profile.location}
-                  onChange={handleChange}
-                  disabled={!editing}
-                />
-              </div>
+              {["fullName", "email", "phone", "birthDate", "location"].map(
+                (field) => (
+                  <div key={field} className="input-group">
+                    <label>
+                      {field === "fullName"
+                        ? "Full Name"
+                        : field === "email"
+                        ? "Email Address"
+                        : field === "phone"
+                        ? "Phone Number"
+                        : field === "birthDate"
+                        ? "Date of Birth"
+                        : "Location"}
+                    </label>
+                    <input
+                      name={field}
+                      type={
+                        field === "email"
+                          ? "email"
+                          : field === "birthDate"
+                          ? "date"
+                          : "text"
+                      }
+                      value={profile[field]}
+                      onChange={handleChange}
+                      disabled={!editing}
+                    />
+                  </div>
+                )
+              )}
             </div>
           </section>
 

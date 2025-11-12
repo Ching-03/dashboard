@@ -61,11 +61,6 @@ export default function App({ onBack }) {
     return () => clearInterval(interval);
   }, []);
 
-  const handleProfileChange = (e) => {
-    const { name, value } = e.target;
-    setUser((prev) => ({ ...prev, [name]: value }));
-  };
-
   return (
     <div className={`app ${theme}`}>
       {/* ===== SIDEBAR ===== */}
@@ -118,8 +113,16 @@ export default function App({ onBack }) {
           {activeTab === "profile" && (
             <Profile
               user={user}
-              handleProfileChange={handleProfileChange}
               theme={theme}
+              onProfileUpdate={(updatedProfile) => {
+                // Update sidebar info whenever profile changes
+                setUser({
+                  ...user,
+                  name: updatedProfile.fullName,
+                  email: updatedProfile.email,
+                  avatarUrl: updatedProfile.avatar,
+                });
+              }}
             />
           )}
           {activeTab === "settings" && (
