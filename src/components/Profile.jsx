@@ -7,7 +7,7 @@ export default function Profile({ user, theme = "dark" }) {
   const [newCondition, setNewCondition] = useState("");
   const [newGoalText, setNewGoalText] = useState("");
 
-  // ✅ Load saved profile (even if user is null)
+  // ✅ Load from localStorage
   useEffect(() => {
     const savedProfile = localStorage.getItem("userProfile");
     if (savedProfile) {
@@ -15,7 +15,7 @@ export default function Profile({ user, theme = "dark" }) {
     }
   }, []);
 
-  // ✅ Fetch from backend when profile or user email changes
+  // ✅ Fetch profile from backend
   useEffect(() => {
     const emailToLoad =
       user?.email || JSON.parse(localStorage.getItem("userProfile"))?.email;
@@ -41,9 +41,7 @@ export default function Profile({ user, theme = "dark" }) {
             weight: data.weight || "",
             emergencyContact: data.emergency_contact || "",
             avatar: data.avatar || "",
-            conditions: Array.isArray(data.conditions)
-              ? data.conditions
-              : [],
+            conditions: Array.isArray(data.conditions) ? data.conditions : [],
             goals: Array.isArray(data.goals) ? data.goals : [],
           };
 
@@ -58,15 +56,14 @@ export default function Profile({ user, theme = "dark" }) {
     };
 
     fetchProfile();
-  }, [user?.email]); // ✅ dependency fixed
+  }, [user?.email]);
 
-  // ✅ Input handler
+  // ✅ Handlers
   const handleChange = (e) => {
     const { name, value } = e.target;
     setProfile((p) => ({ ...p, [name]: value }));
   };
 
-  // ✅ Image upload (base64)
   const handleImageUpload = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -75,7 +72,6 @@ export default function Profile({ user, theme = "dark" }) {
     reader.readAsDataURL(file);
   };
 
-  // ✅ Add/remove conditions
   const handleAddCondition = () => {
     if (!newCondition.trim()) return;
     setProfile((p) => ({
@@ -84,6 +80,7 @@ export default function Profile({ user, theme = "dark" }) {
     }));
     setNewCondition("");
   };
+
   const handleRemoveCondition = (i) => {
     setProfile((p) => ({
       ...p,
@@ -91,7 +88,6 @@ export default function Profile({ user, theme = "dark" }) {
     }));
   };
 
-  // ✅ Add/remove goals
   const handleAddGoal = () => {
     if (!newGoalText.trim()) return;
     setProfile((p) => ({
@@ -100,12 +96,14 @@ export default function Profile({ user, theme = "dark" }) {
     }));
     setNewGoalText("");
   };
+
   const handleRemoveGoal = (i) => {
     setProfile((p) => ({
       ...p,
       goals: p.goals.filter((_, idx) => idx !== i),
     }));
   };
+
   const handleGoalProgressChange = (i, value) => {
     const v = Math.max(0, Math.min(100, Number(value) || 0));
     setProfile((p) => {
@@ -115,7 +113,6 @@ export default function Profile({ user, theme = "dark" }) {
     });
   };
 
-  // ✅ Save profile to backend + persist to localStorage
   const handleSave = async () => {
     try {
       const res = await fetch("http://localhost:5000/api/profile", {
@@ -128,10 +125,7 @@ export default function Profile({ user, theme = "dark" }) {
       if (!res.ok) throw new Error(data.message || "Save error");
 
       alert("✅ Profile saved successfully!");
-
-      // 💾 Save to localStorage after successful save
       localStorage.setItem("userProfile", JSON.stringify(profile));
-
       setEditing(false);
     } catch (err) {
       alert("❌ Error saving profile: " + err.message);
