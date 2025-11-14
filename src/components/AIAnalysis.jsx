@@ -12,16 +12,32 @@ export default function AIAnalysis({ deviceData }) {
     sleep: 71,
     activity: 88,
   });
+  const [healthScore, setHealthScore] = useState(78);
 
   useEffect(() => {
-    // Simulate real-time updates from the deviceData
     if (deviceData) {
+      // Compute real-time metrics based on incoming data
+      const newStress = Math.max(0, Math.min(100, Math.round((1 - deviceData.stressLevel) * 100)));
+      const newCardio = deviceData.heartRate
+        ? Math.max(60, Math.min(100, 100 - Math.abs(deviceData.heartRate - 75)))
+        : metrics.cardiovascular;
+
+      const newActivity = deviceData.steps
+        ? Math.min(100, Math.round((deviceData.steps / 10000) * 100))
+        : metrics.activity;
+
       setMetrics((prev) => ({
         ...prev,
-        stress: Math.max(50, Math.min(100, 100 - deviceData.stressLevel * 50)),
+        stress: newStress,
+        cardiovascular: newCardio,
+        activity: newActivity,
       }));
+
+      // Simple health score calculation
+      const newScore = Math.round((newStress + newCardio + newActivity + metrics.sleep) / 4);
+      setHealthScore(newScore);
     }
-  }, [deviceData]);
+  }, [deviceData, metrics.sleep]);
 
   return (
     <div className="ai-analysis">
@@ -32,29 +48,26 @@ export default function AIAnalysis({ deviceData }) {
       <div className="overall-card">
         <div className="score-ring">
           <div className="circle">
-            <span>{Math.round(deviceData?.healthScore || 78)}</span>
+            <span>{healthScore}</span>
             <p>Score</p>
           </div>
         </div>
         <div className="overall-info">
           <h3>Overall Health Score</h3>
           <p>
-            Your health metrics are in good standing. AI analysis shows
-            consistent improvement over the past month with room for optimization
-            in stress management.
+            Your health metrics are monitored in real-time. AI insights highlight areas of improvement while tracking
+            cardiovascular health, stress levels, and activity patterns.
           </p>
         </div>
-        <div className="status-tag improving">↑ Improving</div>
+        <div className={`status-tag ${healthScore > 80 ? "improving" : "stable"}`}>
+          {healthScore > 80 ? "↑ Improving" : "⚡ Stable"}
+        </div>
       </div>
 
       {/* ===== Tabs ===== */}
       <div className="tabs">
         {["overview", "recommendations", "patterns"].map((tab) => (
-          <button
-            key={tab}
-            className={activeTab === tab ? "active" : ""}
-            onClick={() => setActiveTab(tab)}
-          >
+          <button key={tab} className={activeTab === tab ? "active" : ""} onClick={() => setActiveTab(tab)}>
             {tab.charAt(0).toUpperCase() + tab.slice(1)}
           </button>
         ))}
@@ -73,7 +86,9 @@ export default function AIAnalysis({ deviceData }) {
 
           <div className="two-box-container">
             <div className="strengths-box">
-              <h4><AiOutlineCheckCircle /> Strengths</h4>
+              <h4>
+                <AiOutlineCheckCircle /> Strengths
+              </h4>
               <ul>
                 <li>Consistent heart rate throughout the day</li>
                 <li>High physical activity levels maintained</li>
@@ -81,7 +96,9 @@ export default function AIAnalysis({ deviceData }) {
               </ul>
             </div>
             <div className="improve-box">
-              <h4><AiOutlineWarning /> Areas to Improve</h4>
+              <h4>
+                <AiOutlineWarning /> Areas to Improve
+              </h4>
               <ul>
                 <li>Elevated stress levels during afternoons</li>
                 <li>Irregular sleep patterns on weekends</li>
@@ -98,19 +115,19 @@ export default function AIAnalysis({ deviceData }) {
           <Recommendation
             icon={<FaRunning />}
             title="Increase Daily Activity"
-            text="Try to add 15 minutes of walking to your daily routine. Your current activity levels are good, but slight increases could improve cardiovascular health."
+            text="Add 15 minutes of walking daily. Slight increases can improve cardiovascular health."
             priority="medium"
           />
           <Recommendation
             icon={<FaBrain />}
             title="Stress Reduction Techniques"
-            text="Your stress levels have been elevated in the afternoon. Consider practicing meditation or deep breathing exercises around 2–4 PM."
+            text="Afternoon stress spikes observed. Practice meditation or deep breathing exercises."
             priority="high"
           />
           <Recommendation
             icon={<FaHeartbeat />}
             title="Heart Rate Variability"
-            text="Your HRV shows good recovery. Continue maintaining consistent sleep schedule to optimize heart health."
+            text="HRV shows good recovery. Maintain consistent sleep schedule to optimize heart health."
             priority="low"
           />
         </div>
@@ -121,18 +138,31 @@ export default function AIAnalysis({ deviceData }) {
         <div className="patterns">
           <div className="pattern-card">
             <h4>Heart Rate Pattern</h4>
-            <p><strong>Finding:</strong> Your heart rate tends to spike around 3 PM daily</p>
-            <p><strong>Insight:</strong> This correlates with your afternoon coffee intake. Consider switching to decaf after 2 PM.</p>
+            <p>
+              <strong>Finding:</strong> Heart rate spikes around 3 PM daily
+            </p>
+            <p>
+              <strong>Insight:</strong> Correlates with afternoon coffee intake. Consider switching to decaf after 2
+              PM.
+            </p>
           </div>
           <div className="pattern-card">
             <h4>Stress Correlation</h4>
-            <p><strong>Finding:</strong> Stress levels are 40% higher on weekdays</p>
-            <p><strong>Insight:</strong> Implementing weekend relaxation techniques during weekdays could help balance stress levels.</p>
+            <p>
+              <strong>Finding:</strong> Stress levels 40% higher on weekdays
+            </p>
+            <p>
+              <strong>Insight:</strong> Implement weekend relaxation techniques during weekdays to balance stress.
+            </p>
           </div>
           <div className="pattern-card">
             <h4>Recovery Time</h4>
-            <p><strong>Finding:</strong> Your heart rate recovery after activity has improved by 12%</p>
-            <p><strong>Insight:</strong> This indicates improving cardiovascular fitness. Keep up your current exercise routine.</p>
+            <p>
+              <strong>Finding:</strong> Heart rate recovery after activity improved by 12%
+            </p>
+            <p>
+              <strong>Insight:</strong> Indicates improving cardiovascular fitness. Keep up your current routine.
+            </p>
           </div>
         </div>
       )}

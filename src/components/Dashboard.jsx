@@ -12,118 +12,94 @@ import {
 } from "recharts";
 import "./Dashboard.css";
 
-function fmtTime(d) {
+// Format date and time nicely
+function fmtDateTime(d) {
   const t = new Date(d);
-  return `${t.getHours().toString().padStart(2, "0")}:${t
-    .getMinutes()
-    .toString()
-    .padStart(2, "0")}:${t.getSeconds().toString().padStart(2, "0")}`;
+  return `${t.getDate().toString().padStart(2, "0")}/${
+    (t.getMonth() + 1).toString().padStart(2, "0")
+  } ${t.getHours().toString().padStart(2, "0")}:${
+    t.getMinutes().toString().padStart(2, "0")
+  }:${t.getSeconds().toString().padStart(2, "0")}`;
 }
 
-export default function Dashboard({
-  // optional props if you want to feed external data
-  initialHeart = 72,
-  initialStress = 0.32,
-  initialSteps = 6842,
-}) {
+// Simple AI Analysis placeholder
+function aiAnalysis(hrSeries, stressSeries) {
+  if (!hrSeries.length || !stressSeries.length) return "No data yet.";
+  const avgHR = (hrSeries.reduce((a, b) => a + b.value, 0) / hrSeries.length).toFixed(0);
+  const avgStress = (
+    stressSeries.reduce((a, b) => a + b.value, 0) / stressSeries.length
+  ).toFixed(2);
+
+  if (avgStress > 0.75) return "⚠️ High stress detected! Consider relaxation.";
+  if (avgHR > 100) return "⚠️ Elevated heart rate. Monitor your activity.";
+  return `Normal readings. Avg HR: ${avgHR} bpm, Avg Stress: ${Math.round(avgStress * 100)}%`;
+}
+
+export default function Dashboard({ espConnected = false }) {
   const [monitoring, setMonitoring] = useState(true);
   const [alertMsg, setAlertMsg] = useState(null);
-
-  // Live heart-rate timeseries
-  const [hrSeries, setHrSeries] = useState(() => {
-    // seed with 20 points (past seconds)
-    const now = Date.now();
-    return Array.from({ length: 20 }, (_, i) => {
-      const ts = now - (19 - i) * 2000;
-      return {
-        time: fmtTime(ts),
-        value: initialHeart + Math.round(Math.sin(i / 2) * 6 + Math.random() * 4),
-        ts,
-      };
-    });
-  });
-
-  // Weekly stress data (7 days) for area chart
-  const [weeklyStress] = useState(() => {
-    return [
-      { day: "Mon", value: 35 },
-      { day: "Tue", value: 48 },
-      { day: "Wed", value: 55 },
-      { day: "Thu", value: 62 },
-      { day: "Fri", value: 58 },
-      { day: "Sat", value: 61 },
-      { day: "Sun", value: 42 },
-    ];
-  });
-
-  const [activitySteps, setActivitySteps] = useState(initialSteps);
-
-  // refs to control interval
+  const [hrSeries, setHrSeries] = useState([]); // Heart rate points
+  const [stressSeries, setStressSeries] = useState([]); // Stress points
+  const [activitySteps, setActivitySteps] = useState(0);
+  const [presentStress, setPresentStress] = useState(null);
   const intervalRef = useRef(null);
 
-  // derive latest presentData
   const present = useMemo(() => {
-    const last = hrSeries[hrSeries.length - 1] || { value: initialHeart };
-    const stressVal = Math.min(
-      1,
-      Math.max(0, initialStress + (last.value - initialHeart) / 200)
-    ); // ad-hoc calc for demo
+    const lastHR = hrSeries[hrSeries.length - 1] || { value: 0 };
+    const lastStress = stressSeries[stressSeries.length - 1] || { value: 0 };
     return {
-      heartRate: last.value,
-      stressLevel: stressVal,
+      heartRate: lastHR.value,
+      stressLevel: presentStress ?? lastStress.value,
       steps: activitySteps,
     };
-  }, [hrSeries, initialHeart, initialStress, activitySteps]);
+  }, [hrSeries, stressSeries, activitySteps, presentStress]);
 
+  // Real-time monitoring from ESP32
   useEffect(() => {
-    // monitoring interval: push new point every 2s
-    function startInterval() {
-      if (intervalRef.current) return;
-      intervalRef.current = setInterval(() => {
-        // generate new HR around last
-        setHrSeries((prev) => {
-          const last = prev[prev.length - 1];
-          const base = last ? last.value : initialHeart;
-          const delta = Math.round((Math.random() - 0.45) * 6); // small variance
-          const nextValue = Math.max(40, Math.min(120, base + delta));
-          const ts = Date.now();
-          const next = { time: fmtTime(ts), value: nextValue, ts };
-          const nextSeries = [...prev.slice(-49), next]; // keep last 50
-          // set alert if stress high (simulate)
-          const simulatedStress = Math.min(1, Math.max(0, initialStress + (nextValue - initialHeart) / 160));
-          setAlertMsg(simulatedStress > 0.75 ? "⚠️ Stress level is abnormally high! Please relax." : null);
-          return nextSeries;
-        });
+    async function fetchLatest() {
+      try {
+        const res = await fetch("http://localhost:5000/api/device-data");
+        const data = await res.json();
 
-        // step increase randomly
-        setActivitySteps((s) => s + Math.round(Math.random() * 6));
-      }, 2000);
-    }
+        if (data.heartRate !== undefined && data.stressLevel !== undefined) {
+          const ts = data.timestamp ? new Date(data.timestamp).getTime() : Date.now();
+          const nextHR = { time: fmtDateTime(ts), value: data.heartRate, ts };
+          const nextStress = { time: fmtDateTime(ts), value: data.stressLevel, ts };
 
-    function stopInterval() {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
+          setHrSeries((prev) => [...prev.slice(-49), nextHR]);
+          setStressSeries((prev) => [...prev.slice(-49), nextStress]);
+          setActivitySteps(data.steps ?? 0);
+          setPresentStress(data.stressLevel);
+
+          setAlertMsg(
+            data.stressLevel > 0.75 ? "⚠️ Stress level is high!" : null
+          );
+        }
+      } catch (err) {
+        console.error("Failed to fetch device data:", err);
       }
     }
 
-    if (monitoring) startInterval();
-    else stopInterval();
+    if (monitoring && !intervalRef.current) {
+      intervalRef.current = setInterval(fetchLatest, 2000);
+    } else if (!monitoring && intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
 
-    return () => stopInterval();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
   }, [monitoring]);
-
-  
 
   return (
     <div className="dashboard-root">
+      {/* Header */}
       <div className="dashboard-header">
         <div>
           <h2>Health Monitoring Dashboard</h2>
           <p className="subtitle">Real-time health metrics and insights</p>
         </div>
-
         <div className="header-actions">
           <button
             className={`stop-btn ${monitoring ? "active" : "paused"}`}
@@ -131,15 +107,22 @@ export default function Dashboard({
           >
             {monitoring ? "Stop Monitoring" : "Start Monitoring"}
           </button>
+          <div className="esp-status-header">
+            {espConnected ? (
+              <span style={{ color: "green" }}>Connected ✅</span>
+            ) : (
+              <span style={{ color: "red" }}>Disconnected ❌</span>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Top cards */}
+      {/* Cards */}
       <div className="cards-row">
         <div className="card">
           <div className="card-title">Heart Rate</div>
           <div className="card-body">
-            <div className="stat-value">{present.heartRate} <span className="unit">bpm</span></div>
+            <div className="stat-value">{present.heartRate} bpm</div>
             <div className="stat-sub">Normal</div>
           </div>
         </div>
@@ -147,11 +130,20 @@ export default function Dashboard({
         <div className="card">
           <div className="card-title">Stress Level</div>
           <div className="card-body">
-            <div className="stress-percent">{Math.round(present.stressLevel * 100)} %</div>
+            <div className="stress-percent">
+              {present.stressLevel !== null
+                ? Math.round(present.stressLevel * 100) + "%"
+                : "--"}
+            </div>
             <div className="stress-bar">
               <div
                 className="stress-bar-fill"
-                style={{ width: `${Math.round(present.stressLevel * 100)}%` }}
+                style={{
+                  width:
+                    present.stressLevel !== null
+                      ? `${Math.round(present.stressLevel * 100)}%`
+                      : "0%",
+                }}
               />
             </div>
             <div className="stat-sub">Moderate</div>
@@ -170,90 +162,94 @@ export default function Dashboard({
           <div className="card-title">Alerts</div>
           <div className="card-body">
             <div className="stat-value">{alertMsg ? "1 active" : "0 today"}</div>
-            <div className="stat-sub">{alertMsg ? alertMsg : "All systems normal"}</div>
+            <div className="stat-sub">{alertMsg || "All systems normal"}</div>
           </div>
         </div>
       </div>
 
-      {/* Charts row */}
+      {/* Charts */}
       <div className="charts-row">
         <div className="chart-card large">
           <div className="chart-title">Heart Rate Trend</div>
-          <div className="chart-area">
-            <ResponsiveContainer width="100%" height={220}>
-              <LineChart data={hrSeries}>
-                <CartesianGrid stroke="rgba(255,255,255,0.03)" vertical={false} />
-                <XAxis dataKey="time" tick={{ fill: "#9aa0a6", fontSize: 11 }} minTickGap={20} />
-                <YAxis domain={[40, 120]} tick={{ fill: "#9aa0a6", fontSize: 11 }} />
-                <Tooltip contentStyle={{ background: "#0f1720", border: "none" }} />
-                <Line
-                  type="monotone"
-                  dataKey="value"
-                  stroke="#3b82f6"
-                  strokeWidth={2}
-                  dot={false}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
+          <ResponsiveContainer width="100%" height={250}>
+            <LineChart data={hrSeries} margin={{ top: 20, bottom: 50, left: 0, right: 20 }}>
+              <defs>
+                <linearGradient id="lineColorHR" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8} />
+                  <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.1} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid stroke="rgba(0,0,0,0.05)" vertical={false} />
+              <XAxis
+                dataKey="time"
+                tick={{ fill: "#555", fontSize: 12 }}
+                interval={0}
+                angle={-45}
+                textAnchor="end"
+              />
+              <YAxis
+                domain={[40, 120]}
+                tick={{ fill: "#555", fontSize: 12 }}
+                label={{ value: "BPM", angle: -90, position: "insideLeft", fill: "#555" }}
+              />
+              <Tooltip
+                formatter={(value) => [`${value} bpm`, "Heart Rate"]}
+                labelFormatter={(label) => `Time: ${label}`}
+              />
+              <Line
+                type="monotone"
+                dataKey="value"
+                stroke="url(#lineColorHR)"
+                strokeWidth={3}
+                dot={{ r: 3, stroke: "#fff", strokeWidth: 1 }}
+              />
+            </LineChart>
+          </ResponsiveContainer>
         </div>
 
         <div className="chart-card small">
-          <div className="chart-title">Weekly Stress Levels</div>
-          <div className="chart-area">
-            <ResponsiveContainer width="100%" height={220}>
-              <AreaChart data={weeklyStress}>
-                <defs>
-                  <linearGradient id="colorStress" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.8} />
-                    <stop offset="95%" stopColor="#06b6d4" stopOpacity={0.1} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid stroke="rgba(255,255,255,0.03)" vertical={false} />
-                <XAxis dataKey="day" tick={{ fill: "#9aa0a6", fontSize: 11 }} />
-                <YAxis tick={{ fill: "#9aa0a6", fontSize: 11 }} />
-                <Tooltip contentStyle={{ background: "#0f1720", border: "none" }} />
-                <Area
-                  type="monotone"
-                  dataKey="value"
-                  stroke="#06b6d4"
-                  fillOpacity={1}
-                  fill="url(#colorStress)"
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
+          <div className="chart-title">Stress Level (Daily)</div>
+          <ResponsiveContainer width="100%" height={250}>
+            <AreaChart data={stressSeries} margin={{ top: 20, bottom: 50, left: 0, right: 20 }}>
+              <defs>
+                <linearGradient id="colorStress" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.8} />
+                  <stop offset="95%" stopColor="#06b6d4" stopOpacity={0.1} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid stroke="rgba(0,0,0,0.05)" vertical={false} />
+              <XAxis
+                dataKey="time"
+                tick={{ fill: "#555", fontSize: 12 }}
+                interval={0}
+                angle={-45}
+                textAnchor="end"
+              />
+              <YAxis
+                domain={[0, 1]}
+                tick={{ fill: "#555", fontSize: 12 }}
+                label={{ value: "Stress", angle: -90, position: "insideLeft", fill: "#555" }}
+              />
+              <Tooltip
+                formatter={(value) => [`${Math.round(value * 100)} %`, "Stress Level"]}
+                labelFormatter={(label) => `Time: ${label}`}
+              />
+              <Area
+                type="monotone"
+                dataKey="value"
+                stroke="#06b6d4"
+                strokeWidth={2}
+                fill="url(#colorStress)"
+              />
+            </AreaChart>
+          </ResponsiveContainer>
         </div>
       </div>
 
-      {/* Insights */}
-      <div className="insights-card">
-        <div className="insights-title">AI Health Insights</div>
-        <ul className="insights-list">
-          <li>
-            <span className="dot green" />
-            <div>
-              <div className="insight-text">Your heart rate is stable and within healthy range</div>
-              <div className="insight-time">2 minutes ago</div>
-            </div>
-          </li>
-
-          <li>
-            <span className="dot purple" />
-            <div>
-              <div className="insight-text">Stress levels have decreased by 15% today</div>
-              <div className="insight-time">1 hour ago</div>
-            </div>
-          </li>
-
-          <li>
-            <span className="dot blue" />
-            <div>
-              <div className="insight-text">Great job! You've reached 68% of your daily step goal</div>
-              <div className="insight-time">3 hours ago</div>
-            </div>
-          </li>
-        </ul>
+      {/* AI Analysis */}
+      <div className="ai-analysis">
+        <h3>AI Analysis</h3>
+        <p>{aiAnalysis(hrSeries, stressSeries)}</p>
       </div>
     </div>
   );

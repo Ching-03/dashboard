@@ -7,28 +7,21 @@ import History from "./components/History";
 import Profile from "./components/Profile";
 import Settings from "./components/Settings";
 
-const mockUser = {
-  name: "John Doe",
-  email: "john.doe@example.com",
-  avatarUrl:
-    "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSZHvxVgtGqrVGGf2LV8KrkfdEMmudzlVXH_7oxnIvkpy_6y0vdrjPE8wjUYUfQkIM_Q1g&usqp=CAU",
-};
-
-const mockHistory = [
-  { timestamp: "2025-10-08 14:00", heartRate: 72, stressLevel: 0.3 },
-  { timestamp: "2025-10-08 15:00", heartRate: 75, stressLevel: 0.5 },
-  { timestamp: "2025-10-08 16:00", heartRate: 70, stressLevel: 0.2 },
-  { timestamp: "2025-10-08 17:00", heartRate: 74, stressLevel: 0.6 },
-];
-
 export default function App({ onBack }) {
-  const [user, setUser] = useState(mockUser);
-  const [history] = useState(mockHistory);
-  const [espConnected, setEspConnected] = useState(true);
+  const [user, setUser] = useState({
+    name: "John Doe",
+    email: "john.doe@example.com",
+    avatarUrl:
+      "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSZHvxVgtGqrVGGf2LV8KrkfdEMmudzlVXH_7oxnIvkpy_6y0vdrjPE8wjUYUfQkIM_Q1g&usqp=CAU",
+  });
+
+  const [history, setHistory] = useState([]);
+  const [espConnected, setEspConnected] = useState(false);
   const [activeTab, setActiveTab] = useState("dashboard");
   const [presentData, setPresentData] = useState({
-    heartRate: 72,
-    stressLevel: 0.3,
+    heartRate: null,
+    stressLevel: null,
+    steps: 0,
   });
   const [alertMsg, setAlertMsg] = useState(null);
   const [theme, setTheme] = useState("dark");
@@ -45,19 +38,59 @@ export default function App({ onBack }) {
     localStorage.setItem("theme", theme);
   }, [theme]);
 
-  // Simulate real-time data updates
+  // Check ESP32 connection every 5 seconds
   useEffect(() => {
-    const interval = setInterval(() => {
-      const newHeartRate = 65 + Math.floor(Math.random() * 20);
-      const newStress = +(Math.random() * 1).toFixed(2);
-      setPresentData({ heartRate: newHeartRate, stressLevel: newStress });
-      setEspConnected(Math.random() > 0.1);
-      setAlertMsg(
-        newStress > 0.7
-          ? "⚠️ Stress level is abnormally high! Please relax."
-          : null
-      );
-    }, 5000);
+    const checkESP = async () => {
+      try {
+        const res = await fetch("http://localhost:5000/api/esp-status");
+        const data = await res.json();
+        setEspConnected(data.connected);
+      } catch {
+        setEspConnected(false);
+      }
+    };
+    checkESP();
+    const interval = setInterval(checkESP, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Real-time device data polling (every 2 seconds)
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const res = await fetch("http://localhost:5000/api/device-data");
+        const data = await res.json();
+
+        if (data.heartRate !== undefined) {
+          setPresentData({
+            heartRate: data.heartRate,
+            stressLevel: data.stressLevel,
+            steps: data.steps || 0,
+          });
+
+          setAlertMsg(
+            data.stressLevel > 0.75
+              ? "⚠️ Stress level is abnormally high! Please relax."
+              : null
+          );
+
+          // Optionally, save history
+          setHistory((prev) => [
+            ...prev,
+            {
+              timestamp: data.timestamp || new Date().toISOString(),
+              heartRate: data.heartRate,
+              stressLevel: data.stressLevel,
+            },
+          ]);
+        }
+      } catch (err) {
+        console.error("Failed to fetch real-time device data:", err);
+      }
+    };
+
+    fetchData(); // initial fetch
+    const interval = setInterval(fetchData, 2000);
     return () => clearInterval(interval);
   }, []);
 
@@ -70,6 +103,12 @@ export default function App({ onBack }) {
           <div className="user-info">
             <h2>{user.name}</h2>
             <p>{user.email}</p>
+
+            {/* ESP32 STATUS */}
+            <div className="esp-status-single">
+              <span className={`dot ${espConnected ? "green" : "red"}`}></span>{" "}
+              {espConnected ? "ESP32 Connected" : "ESP32 Disconnected"}
+            </div>
           </div>
         </div>
 
@@ -115,7 +154,6 @@ export default function App({ onBack }) {
               user={user}
               theme={theme}
               onProfileUpdate={(updatedProfile) => {
-                // Update sidebar info whenever profile changes
                 setUser({
                   ...user,
                   name: updatedProfile.fullName,
