@@ -1,47 +1,47 @@
+import axios from "axios";
 import { useEffect, useState } from "react";
 import "./Profile.css";
 
 export default function Profile({ user, theme = "dark", onProfileUpdate }) {
-  // ✅ Initialize profile from localStorage or user prop
-  const [profile, setProfile] = useState(() => {
-    const saved = localStorage.getItem("userProfile");
-    return saved
-      ? JSON.parse(saved)
-      : {
-          fullName: user?.name || "",
-          email: user?.email || "",
-          avatar: user?.avatarUrl || "",
-          phone: "",
-          birthDate: "",
-          location: "",
-          bloodType: "",
-          height: "",
-          weight: "",
-          emergencyContact: "",
-          conditions: [],
-          goals: [],
-        };
-  });
-
+  const [profile, setProfile] = useState(null);
   const [editing, setEditing] = useState(false);
   const [newCondition, setNewCondition] = useState("");
   const [newGoalText, setNewGoalText] = useState("");
+  const userId = user?.id || 1; // Make sure this comes from your auth system
 
-  // ✅ Sync profile to localStorage + parent (sidebar) whenever it changes
+  // -------------------------------
+  // Fetch profile from backend
+  // -------------------------------
   useEffect(() => {
-    if (profile) {
-      localStorage.setItem("userProfile", JSON.stringify(profile));
-      if (onProfileUpdate) {
-        onProfileUpdate({
-          fullName: profile.fullName,
-          email: profile.email,
-          avatar: profile.avatar,
+    const fetchProfile = async () => {
+      try {
+        const res = await axios.get(`http://localhost:5000/api/profile/${userId}`);
+        const data = res.data;
+        setProfile({
+          fullName: data.full_name || "",
+          email: data.email || "",
+          avatar: data.avatar || "",
+          phone: data.phone || "",
+          birthDate: data.birth_date || "",
+          location: data.location || "",
+          bloodType: data.blood_type || "",
+          height: data.height || "",
+          weight: data.weight || "",
+          emergencyContact: data.emergency_contact || "",
+          conditions: data.conditions || [],
+          goals: data.goals || [],
         });
+      } catch (error) {
+        console.error("Failed to fetch profile:", error);
+        alert("❌ Failed to load profile from backend.");
       }
-    }
-  }, [profile, onProfileUpdate]);
+    };
+    fetchProfile();
+  }, [userId]);
 
-  // ✅ Handlers
+  // -------------------------------
+  // Input handlers
+  // -------------------------------
   const handleChange = (e) => {
     const { name, value } = e.target;
     setProfile((p) => ({ ...p, [name]: value }));
@@ -96,27 +96,67 @@ export default function Profile({ user, theme = "dark", onProfileUpdate }) {
     });
   };
 
-  const handleSave = () => {
-    // ✅ Optional: Call backend save here
-    alert("✅ Profile saved successfully!");
-    setEditing(false);
+  // -------------------------------
+  // Save profile to backend
+  // -------------------------------
+  const handleSave = async () => {
+    if (!profile) return;
+    try {
+      const payload = {
+        full_name: profile.fullName,
+        email: profile.email,
+        phone: profile.phone,
+        birth_date: profile.birthDate,
+        location: profile.location,
+        blood_type: profile.bloodType,
+        height: profile.height,
+        weight: profile.weight,
+        emergency_contact: profile.emergencyContact,
+        avatar: profile.avatar,
+        conditions: profile.conditions,
+        goals: profile.goals,
+      };
+
+      await axios.put(`http://localhost:5000/api/profile/${userId}`, payload);
+
+      alert("✅ Profile saved successfully to database!");
+      setEditing(false);
+
+      if (onProfileUpdate) {
+        onProfileUpdate({
+          fullName: profile.fullName,
+          email: profile.email,
+          avatar: profile.avatar,
+        });
+      }
+    } catch (error) {
+      console.error("Error saving profile:", error);
+      alert("❌ Failed to save profile. Check backend connection.");
+    }
   };
 
-  if (!profile)
+  // -------------------------------
+  // Loading state
+  // -------------------------------
+  if (!profile) {
     return (
       <div className={`profile-page ${theme}`}>
         <div className="loading">Loading profile...</div>
       </div>
     );
+  }
 
+  // -------------------------------
+  // Render
+  // -------------------------------
   return (
     <div className={`profile-page ${theme}`}>
+      {/* Header */}
       <div className="profile-header">
         <div>
           <h2>Profile</h2>
           <p>Manage your personal and health information</p>
         </div>
-
         <div className="header-actions">
           <button
             className="edit-btn"
@@ -132,8 +172,9 @@ export default function Profile({ user, theme = "dark", onProfileUpdate }) {
         </div>
       </div>
 
+      {/* Profile content */}
       <div className="profile-container">
-        {/* Left Panel */}
+        {/* Left panel */}
         <aside className="left-panel card">
           <div className="avatar-block">
             {profile.avatar ? (
@@ -141,16 +182,10 @@ export default function Profile({ user, theme = "dark", onProfileUpdate }) {
             ) : (
               <div className="circle">{(profile.fullName || "U").charAt(0)}</div>
             )}
-
             {editing && (
               <label className="upload-btn">
                 Change Photo
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleImageUpload}
-                  hidden
-                />
+                <input type="file" accept="image/*" onChange={handleImageUpload} hidden />
               </label>
             )}
           </div>
@@ -169,64 +204,52 @@ export default function Profile({ user, theme = "dark", onProfileUpdate }) {
           </div>
         </aside>
 
-        {/* Right Panel */}
+        {/* Right panel */}
         <main className="right-panel">
-          {/* Personal Info */}
+          {/* Personal info */}
           <section className="section card">
             <h3>Personal Information</h3>
             <div className="input-grid">
-              {["fullName", "email", "phone", "birthDate", "location"].map(
-                (field) => (
-                  <div key={field} className="input-group">
-                    <label>
-                      {field === "fullName"
-                        ? "Full Name"
-                        : field === "email"
-                        ? "Email Address"
-                        : field === "phone"
-                        ? "Phone Number"
-                        : field === "birthDate"
-                        ? "Date of Birth"
-                        : "Location"}
-                    </label>
-                    <input
-                      name={field}
-                      type={
-                        field === "email"
-                          ? "email"
-                          : field === "birthDate"
-                          ? "date"
-                          : "text"
-                      }
-                      value={profile[field]}
-                      onChange={handleChange}
-                      disabled={!editing}
-                    />
-                  </div>
-                )
-              )}
+              {["fullName", "email", "phone", "birthDate", "location"].map((field) => (
+                <div key={field} className="input-group">
+                  <label>
+                    {field === "fullName"
+                      ? "Full Name"
+                      : field === "email"
+                      ? "Email Address"
+                      : field === "phone"
+                      ? "Phone Number"
+                      : field === "birthDate"
+                      ? "Date of Birth"
+                      : "Location"}
+                  </label>
+                  <input
+                    name={field}
+                    type={field === "email" ? "email" : field === "birthDate" ? "date" : "text"}
+                    value={profile[field]}
+                    onChange={handleChange}
+                    disabled={!editing}
+                  />
+                </div>
+              ))}
             </div>
           </section>
 
-          {/* Medical Info */}
+          {/* Medical info */}
           <section className="section card">
             <h3>Medical Information</h3>
             <div className="medical-grid">
-              {["bloodType", "height", "weight", "emergencyContact"].map(
-                (field, i) => (
-                  <div key={i} className="med-card">
-                    <div className="med-title">
-                      {field.replace(/([A-Z])/g, " $1")}
-                    </div>
-                    <input
-                      name={field}
-                      value={profile[field]}
-                      onChange={handleChange}
-                      disabled={!editing}
-                    />
-                  </div>
-                )
-              )}
+              {["bloodType", "height", "weight", "emergencyContact"].map((field, i) => (
+                <div key={i} className="med-card">
+                  <div className="med-title">{field.replace(/([A-Z])/g, " $1")}</div>
+                  <input
+                    name={field}
+                    value={profile[field]}
+                    onChange={handleChange}
+                    disabled={!editing}
+                  />
+                </div>
+              ))}
             </div>
           </section>
 
@@ -239,10 +262,7 @@ export default function Profile({ user, theme = "dark", onProfileUpdate }) {
                   <div className="goal-text">{g.text}</div>
                   <div className="goal-bar-row">
                     <div className="goal-bar">
-                      <div
-                        className="goal-progress"
-                        style={{ width: `${g.progress}%` }}
-                      />
+                      <div className="goal-progress" style={{ width: `${g.progress}%` }} />
                     </div>
                     <div className="goal-percent">{g.progress}%</div>
                   </div>
@@ -253,14 +273,9 @@ export default function Profile({ user, theme = "dark", onProfileUpdate }) {
                         min="0"
                         max="100"
                         value={g.progress}
-                        onChange={(e) =>
-                          handleGoalProgressChange(i, e.target.value)
-                        }
+                        onChange={(e) => handleGoalProgressChange(i, e.target.value)}
                       />
-                      <button
-                        className="remove-goal"
-                        onClick={() => handleRemoveGoal(i)}
-                      >
+                      <button className="remove-goal" onClick={() => handleRemoveGoal(i)}>
                         Remove
                       </button>
                     </div>
@@ -288,10 +303,7 @@ export default function Profile({ user, theme = "dark", onProfileUpdate }) {
                 <li key={i}>
                   {c}
                   {editing && (
-                    <button
-                      className="small-x"
-                      onClick={() => handleRemoveCondition(i)}
-                    >
+                    <button className="small-x" onClick={() => handleRemoveCondition(i)}>
                       ✖
                     </button>
                   )}

@@ -22,13 +22,12 @@ function fmtDateTime(d) {
   }:${t.getSeconds().toString().padStart(2, "0")}`;
 }
 
-// Simple AI Analysis placeholder
+// Simple AI Analysis
 function aiAnalysis(hrSeries, stressSeries) {
   if (!hrSeries.length || !stressSeries.length) return "No data yet.";
-  const avgHR = (hrSeries.reduce((a, b) => a + b.value, 0) / hrSeries.length).toFixed(0);
-  const avgStress = (
-    stressSeries.reduce((a, b) => a + b.value, 0) / stressSeries.length
-  ).toFixed(2);
+
+  const avgHR = (hrSeries.reduce((sum, p) => sum + p.value, 0) / hrSeries.length).toFixed(0);
+  const avgStress = (stressSeries.reduce((sum, p) => sum + p.value, 0) / stressSeries.length).toFixed(2);
 
   if (avgStress > 0.75) return "⚠️ High stress detected! Consider relaxation.";
   if (avgHR > 100) return "⚠️ Elevated heart rate. Monitor your activity.";
@@ -37,59 +36,61 @@ function aiAnalysis(hrSeries, stressSeries) {
 
 export default function Dashboard({ espConnected = false }) {
   const [monitoring, setMonitoring] = useState(true);
+  const [hrSeries, setHrSeries] = useState([]);
+  const [stressSeries, setStressSeries] = useState([]);
+  const [steps, setSteps] = useState(0);
   const [alertMsg, setAlertMsg] = useState(null);
-  const [hrSeries, setHrSeries] = useState([]); // Heart rate points
-  const [stressSeries, setStressSeries] = useState([]); // Stress points
-  const [activitySteps, setActivitySteps] = useState(0);
-  const [presentStress, setPresentStress] = useState(null);
   const intervalRef = useRef(null);
 
   const present = useMemo(() => {
-    const lastHR = hrSeries[hrSeries.length - 1] || { value: 0 };
-    const lastStress = stressSeries[stressSeries.length - 1] || { value: 0 };
+    const lastHR = hrSeries[hrSeries.length - 1]?.value || 0;
+    const lastStress = stressSeries[stressSeries.length - 1]?.value || 0;
     return {
-      heartRate: lastHR.value,
-      stressLevel: presentStress ?? lastStress.value,
-      steps: activitySteps,
+      heartRate: lastHR,
+      stressLevel: lastStress,
+      steps,
     };
-  }, [hrSeries, stressSeries, activitySteps, presentStress]);
+  }, [hrSeries, stressSeries, steps]);
 
-  // Real-time monitoring from ESP32
-  useEffect(() => {
-    async function fetchLatest() {
-      try {
-        const res = await fetch("http://localhost:5000/api/device-data");
-        const data = await res.json();
+  // Fetch latest data from backend
+  const fetchLatest = async () => {
+    try {
+      const res = await fetch("http://localhost:5000/api/dashboard/data");
+      const data = await res.json();
 
-        if (data.heartRate !== undefined && data.stressLevel !== undefined) {
-          const ts = data.timestamp ? new Date(data.timestamp).getTime() : Date.now();
-          const nextHR = { time: fmtDateTime(ts), value: data.heartRate, ts };
-          const nextStress = { time: fmtDateTime(ts), value: data.stressLevel, ts };
+      // Check if data is valid
+      if (!Array.isArray(data) || data.length === 0) return;
 
-          setHrSeries((prev) => [...prev.slice(-49), nextHR]);
-          setStressSeries((prev) => [...prev.slice(-49), nextStress]);
-          setActivitySteps(data.steps ?? 0);
-          setPresentStress(data.stressLevel);
+      const latest = data[0];
 
-          setAlertMsg(
-            data.stressLevel > 0.75 ? "⚠️ Stress level is high!" : null
-          );
-        }
-      } catch (err) {
-        console.error("Failed to fetch device data:", err);
-      }
+      if (latest.heartRate === undefined || latest.stressLevel === undefined) return;
+
+      const timestamp = new Date(latest.timestamp || Date.now()).getTime();
+
+      const hrPoint = { time: fmtDateTime(timestamp), value: latest.heartRate, ts: timestamp };
+      const stressPoint = { time: fmtDateTime(timestamp), value: latest.stressLevel, ts: timestamp };
+
+      setHrSeries((prev) => [...prev.slice(-49), hrPoint]);
+      setStressSeries((prev) => [...prev.slice(-49), stressPoint]);
+      setSteps(latest.steps ?? 0);
+
+      setAlertMsg(latest.stressLevel > 0.75 ? "⚠️ Stress level is high!" : null);
+    } catch (err) {
+      console.error("Failed to fetch dashboard data:", err);
     }
+  };
 
+  // Start/stop real-time polling
+  useEffect(() => {
     if (monitoring && !intervalRef.current) {
+      fetchLatest(); // initial fetch
       intervalRef.current = setInterval(fetchLatest, 2000);
     } else if (!monitoring && intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
     }
 
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
+    return () => clearInterval(intervalRef.current);
   }, [monitoring]);
 
   return (
@@ -131,19 +132,12 @@ export default function Dashboard({ espConnected = false }) {
           <div className="card-title">Stress Level</div>
           <div className="card-body">
             <div className="stress-percent">
-              {present.stressLevel !== null
-                ? Math.round(present.stressLevel * 100) + "%"
-                : "--"}
+              {present.stressLevel !== null ? Math.round(present.stressLevel * 100) + "%" : "--"}
             </div>
             <div className="stress-bar">
               <div
                 className="stress-bar-fill"
-                style={{
-                  width:
-                    present.stressLevel !== null
-                      ? `${Math.round(present.stressLevel * 100)}%`
-                      : "0%",
-                }}
+                style={{ width: present.stressLevel !== null ? `${Math.round(present.stressLevel * 100)}%` : "0%" }}
               />
             </div>
             <div className="stat-sub">Moderate</div>
@@ -172,7 +166,7 @@ export default function Dashboard({ espConnected = false }) {
         <div className="chart-card large">
           <div className="chart-title">Heart Rate Trend</div>
           <ResponsiveContainer width="100%" height={250}>
-            <LineChart data={hrSeries} margin={{ top: 20, bottom: 50, left: 0, right: 20 }}>
+            <LineChart data={hrSeries}>
               <defs>
                 <linearGradient id="lineColorHR" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8} />
@@ -180,29 +174,10 @@ export default function Dashboard({ espConnected = false }) {
                 </linearGradient>
               </defs>
               <CartesianGrid stroke="rgba(0,0,0,0.05)" vertical={false} />
-              <XAxis
-                dataKey="time"
-                tick={{ fill: "#555", fontSize: 12 }}
-                interval={0}
-                angle={-45}
-                textAnchor="end"
-              />
-              <YAxis
-                domain={[40, 120]}
-                tick={{ fill: "#555", fontSize: 12 }}
-                label={{ value: "BPM", angle: -90, position: "insideLeft", fill: "#555" }}
-              />
-              <Tooltip
-                formatter={(value) => [`${value} bpm`, "Heart Rate"]}
-                labelFormatter={(label) => `Time: ${label}`}
-              />
-              <Line
-                type="monotone"
-                dataKey="value"
-                stroke="url(#lineColorHR)"
-                strokeWidth={3}
-                dot={{ r: 3, stroke: "#fff", strokeWidth: 1 }}
-              />
+              <XAxis dataKey="time" tick={{ fill: "#555", fontSize: 12 }} interval={0} angle={-45} textAnchor="end" />
+              <YAxis domain={[40, 120]} tick={{ fill: "#555", fontSize: 12 }} label={{ value: "BPM", angle: -90, position: "insideLeft", fill: "#555" }} />
+              <Tooltip formatter={(value) => [`${value} bpm`, "Heart Rate"]} />
+              <Line type="monotone" dataKey="value" stroke="url(#lineColorHR)" strokeWidth={3} dot={{ r: 3, stroke: "#fff", strokeWidth: 1 }} />
             </LineChart>
           </ResponsiveContainer>
         </div>
@@ -210,7 +185,7 @@ export default function Dashboard({ espConnected = false }) {
         <div className="chart-card small">
           <div className="chart-title">Stress Level (Daily)</div>
           <ResponsiveContainer width="100%" height={250}>
-            <AreaChart data={stressSeries} margin={{ top: 20, bottom: 50, left: 0, right: 20 }}>
+            <AreaChart data={stressSeries}>
               <defs>
                 <linearGradient id="colorStress" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.8} />
@@ -218,29 +193,10 @@ export default function Dashboard({ espConnected = false }) {
                 </linearGradient>
               </defs>
               <CartesianGrid stroke="rgba(0,0,0,0.05)" vertical={false} />
-              <XAxis
-                dataKey="time"
-                tick={{ fill: "#555", fontSize: 12 }}
-                interval={0}
-                angle={-45}
-                textAnchor="end"
-              />
-              <YAxis
-                domain={[0, 1]}
-                tick={{ fill: "#555", fontSize: 12 }}
-                label={{ value: "Stress", angle: -90, position: "insideLeft", fill: "#555" }}
-              />
-              <Tooltip
-                formatter={(value) => [`${Math.round(value * 100)} %`, "Stress Level"]}
-                labelFormatter={(label) => `Time: ${label}`}
-              />
-              <Area
-                type="monotone"
-                dataKey="value"
-                stroke="#06b6d4"
-                strokeWidth={2}
-                fill="url(#colorStress)"
-              />
+              <XAxis dataKey="time" tick={{ fill: "#555", fontSize: 12 }} interval={0} angle={-45} textAnchor="end" />
+              <YAxis domain={[0, 1]} tick={{ fill: "#555", fontSize: 12 }} label={{ value: "Stress", angle: -90, position: "insideLeft", fill: "#555" }} />
+              <Tooltip formatter={(value) => [`${Math.round(value * 100)} %`, "Stress Level"]} />
+              <Area type="monotone" dataKey="value" stroke="#06b6d4" strokeWidth={2} fill="url(#colorStress)" />
             </AreaChart>
           </ResponsiveContainer>
         </div>
