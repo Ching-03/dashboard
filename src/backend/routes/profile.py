@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify
-from models.database import get_connection
+from db_connection import get_connection
 
 profile_bp = Blueprint('profile', __name__, url_prefix='/api/profile')
 

@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "vite": "vite",
-    "backend": "cd src\\backend && call .\\venv\\Scripts\\activate && set FLASK_APP=app.py && set FLASK_ENV=development && flask run",
+    "backend": "cd src\\backend && python -u app.py",
     "dev": "concurrently -n \"FRONTEND,BACKEND\" -c \"green,cyan\" \"npm run vite\" \"npm run backend\"",
     "build": "vite build",
     "lint": "eslint .",

@@ -11,8 +11,10 @@ def get_connection():
             host=os.getenv("DB_HOST", "localhost"),
             user=os.getenv("DB_USER", "root"),
             password=os.getenv("DB_PASSWORD", ""),
-            database=os.getenv("DB_NAME", "dashboard_app")
+            database=os.getenv("DB_NAME", "dashboard_app"),
+            connection_timeout=10
         )
+        conn.ping(reconnect=True)
         return conn
     except Error as e:
         print("DB connection error:", e)
